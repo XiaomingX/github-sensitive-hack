@@ -15,7 +15,6 @@ python3 main.py http://www.example.com/.git/
 ```
 
 ## 原理说明
-这是关于如何通过泄露的`.git`文件夹恢复项目源代码的简明教程：
 
 ### 基础恢复步骤
 
