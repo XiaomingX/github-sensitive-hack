@@ -17,6 +17,16 @@ USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTM
 # 忽略SSL证书验证（针对自签证书场景）
 requests.packages.urllib3.disable_warnings()
 
+# 敏感信息模式匹配规则
+SENSITIVE_PATTERNS = {
+    'api_key': re.compile(r'(?i)(api_key|api_secret|api-token|access_key|secret_key)\s*=\s*.+'),
+    'password': re.compile(r'(?i)(password|pass|pwd|secret)\s*=\s*.+'),
+    'database': re.compile(r'(?i)(db_user|db_pass|db_password|database_url|db_host|db_name)\s*=\s*.+'),
+    'token': re.compile(r'(?i)(token|auth_token|jwt|oauth|bearer)\s*=\s*.+'),
+    'private_key': re.compile(r'(?i)(private_key|rsa_private|ssh_private)\s*=\s*.+'),
+    'credit_card': re.compile(r'(?i)(credit_card|cc_number|card_number)\s*=\s*.+'),
+}
+
 
 def parse_git_index(filename):
     """解析.git/index文件，提取文件SHA1哈希和路径"""
@@ -104,6 +114,87 @@ class GitScanner:
             print(f"[ERROR] 下载index失败: {str(e)}")
             return None
 
+    def check_env_file(self):
+        """检查并下载根目录下的.env文件，检测敏感信息"""
+        print("[+] 开始检测.env文件敏感信息泄露...")
+        
+        # 构建可能的.env文件URL（根目录下）
+        base_domain = self.base_url.replace('/.git', '')
+        env_urls = [
+            f"{base_domain}/.env",
+            f"{base_domain}/env",
+            f"{base_domain}/.env.local",
+            f"{base_domain}/.env.example",
+            f"{base_domain}/.env.development",
+            f"{base_domain}/.env.production"
+        ]
+        
+        env_path = os.path.join(self.dest_dir, ".env_checked")
+        os.makedirs(env_path, exist_ok=True)
+        
+        for url in env_urls:
+            try:
+                response = requests.get(
+                    url,
+                    headers={'User-Agent': USER_AGENT},
+                    verify=False,
+                    timeout=10
+                )
+                response.raise_for_status()
+                
+                # 保存下载的.env文件
+                filename = os.path.basename(url)
+                save_path = os.path.join(env_path, filename)
+                with open(save_path, "wb") as f:
+                    f.write(response.content)
+                
+                print(f"[WARNING] 发现暴露的{filename}文件: {url}")
+                print(f"[INFO] {filename}文件已保存至: {save_path}")
+                
+                # 检测敏感信息
+                self.detect_sensitive_info(save_path)
+                
+            except requests.exceptions.RequestException:
+                continue  # 不输出未找到的信息，避免干扰
+        
+        print("[+] .env文件检测完成")
+
+    def detect_sensitive_info(self, file_path):
+        """检测文件中的敏感信息"""
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+            
+            found_sensitive = False
+            for category, pattern in SENSITIVE_PATTERNS.items():
+                matches = pattern.findall(content)
+                if matches:
+                    if not found_sensitive:
+                        print("[!] 检测到敏感信息:")
+                        found_sensitive = True
+                    print(f"  - {category}: {len(matches)}处匹配")
+                    # 打印前3个匹配项（部分隐藏敏感内容）
+                    for i, match in enumerate(matches[:3]):
+                        # 处理元组类型的匹配结果
+                        if isinstance(match, tuple):
+                            match_str = "=".join(match)
+                        else:
+                            match_str = match
+                        # 隐藏部分敏感内容
+                        if "=" in match_str:
+                            key, value = match_str.split("=", 1)
+                            # 只显示值的前3个字符和后3个字符
+                            if len(value) > 6:
+                                masked_value = value[:3] + "..." + value[-3:]
+                                print(f"    示例: {key}={masked_value}")
+                            else:
+                                print(f"    示例: {key}=***")
+                        else:
+                            print(f"    示例: {match_str[:10]}...")
+        
+        except Exception as e:
+            print(f"[ERROR] 检测敏感信息时出错: {str(e)}")
+
     def enqueue_files(self, index_path):
         """从index文件提取文件信息，加入下载队列"""
         for entry in parse_git_index(index_path):
@@ -113,6 +204,11 @@ class GitScanner:
             # 过滤危险路径（防止路径遍历）
             if ".." not in file_name:
                 self.queue.put((sha1, file_name))
+                
+                # 特别检查是否有.env相关文件在Git历史中
+                if '.env' in file_name:
+                    with self.lock:
+                        print(f"[WARNING] Git历史中发现敏感文件: {file_name}")
 
     def _fetch_data(self, url):
         """内部请求方法，获取Git对象文件"""
@@ -186,6 +282,11 @@ def main():
     scanner = GitScanner(base_url)
     print(f"[+] 目标URL: {base_url}")
     print(f"[+] 输出目录: {scanner.dest_dir}")
+    
+    # 先检查.env文件泄露
+    scanner.check_env_file()
+    
+    # 然后执行Git文件恢复流程
     print("[+] 正在下载并解析.git/index文件...")
 
     index_path = scanner.download_index()
