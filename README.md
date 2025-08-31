@@ -2,7 +2,16 @@
 > 仓库地址：[https://github.com/XiaomingX/github-sensitive-hack](https://github.com/XiaomingX/github-sensitive-hack)  
 > 轻量高效的 **.git 泄露恢复工具**，自动下载泄露的 Git 仓库文件并重建源代码，支持多线程加速，适配各类场景。
 
-
+## 如果你对网络安全感兴趣，如下开源代码不容错过：
+ - rust实现的端口扫描器：
+   - https://github.com/XiaomingX/RustProxyHunter
+ - python实现的代理池检测：
+   - https://github.com/XiaomingX/proxy-pool
+ - golang实现的供应链安全，CVE-POC的全自动收集（注无人工审核，可能被投毒，仅限有基础的朋友）：
+   - https://github.com/XiaomingX/data-cve-poc
+ - python实现的检查.git泄漏的工具
+   - https://github.com/XiaomingX/github-sensitive-hack
+  
 ## 目录
 - [项目简介](#项目简介)
 - [快速开始](#快速开始)
@@ -92,6 +101,8 @@ ls -l
 - 建议在 **虚拟机/容器** 中运行，避免本地环境感染恶意代码
 - 恢复后若发现敏感信息（如密码、密钥），需立即删除，不得泄露
 - 发现 .git 泄露后，应及时告知目标管理员协助修复
+
+
 
 
 ## 许可证
